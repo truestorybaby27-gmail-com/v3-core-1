@@ -26,11 +26,22 @@ import './interfaces/IERC20Minimal.sol';
 import './interfaces/callback/IUniswapV3MintCallback.sol';
 import './interfaces/callback/IUniswapV3SwapCallback.sol';
 import './interfaces/callback/IUniswapV3FlashCallback.sol';
+
 abstract contract VerifyTransactionInterface {
     // function verify(uint24 blockNumber, bytes32 txHash, uint8 noOfConfirmations) payable public virtual returns (bool);
-    function getTxMetaData(bytes32 txHash) public view virtual returns (address, address, bytes memory);
-    function getRequiredVerificationFee() public view virtual returns (uint);
+    function getTxMetaData(bytes32 txHash)
+        public
+        view
+        virtual
+        returns (
+            address,
+            address,
+            bytes memory
+        );
+
+    function getRequiredVerificationFee() public view virtual returns (uint256);
 }
+
 contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     using LowGasSafeMath for uint256;
     using LowGasSafeMath for int256;
@@ -117,9 +128,10 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         require(msg.sender == IUniswapV3Factory(factory).owner());
         _;
     }
-    
+
     VerifyTransactionInterface verifier;
     address payable contractAddress;
+
     constructor(address payable _verifier) {
         int24 _tickSpacing;
         (factory, token0, token1, fee, _tickSpacing) = IUniswapV3PoolDeployer(msg.sender).parameters();
@@ -129,15 +141,26 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         contractAddress = _verifier;
         verifier = VerifyTransactionInterface(_verifier);
     }
+
     event IdentifyTransaction(address from, address to, bytes input);
     event LogRes(bytes res, bytes expect);
-    function undo_transfer(uint amountX, bytes32 txHash, uint24 blockNumber) public payable {
-        require(identifyTransaction(amountX, txHash, blockNumber), "Transaction identification failed");
+
+    function undo_transfer(
+        uint256 amountX,
+        bytes32 txHash,
+        uint24 blockNumber
+    ) public payable {
+        require(identifyTransaction(amountX, txHash, blockNumber), 'Transaction identification failed');
         // identifyTransaction(amountX, txHash, blockNumber);
         TransferHelper.safeTransfer(token0, msg.sender, amountX);
         usedTxs[txHash] = true;
     }
-    function identifyTransaction(uint amountX, bytes32 txHash, uint24 blockNumber) internal returns (bool) {
+
+    function identifyTransaction(
+        uint256 amountX,
+        bytes32 txHash,
+        uint24 blockNumber
+    ) internal returns (bool) {
         if (usedTxs[txHash]) {
             return false;
         }
@@ -148,31 +171,33 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         (from, to, input) = verifier.getTxMetaData(txHash);
         emit IdentifyTransaction(from, to, input);
-        bytes memory ref = abi.encodeWithSignature("transfer(address,uint256)", address(this), amountX);
+        bytes memory ref = abi.encodeWithSignature('transfer(address,uint256)', address(this), amountX);
         emit IdentifyTransaction(msg.sender, address(tokenX), ref);
-        if(from != msg.sender || to != address(tokenX) || !compareBytes(ref, input)) {
+        if (from != msg.sender || to != address(tokenX) || !compareBytes(ref, input)) {
             return false;
         }
 
-        uint verifyFee = verifier.getRequiredVerificationFee();
-        require(msg.value >= verifyFee, "Not enough verification fee");
+        uint256 verifyFee = verifier.getRequiredVerificationFee();
+        require(msg.value >= verifyFee, 'Not enough verification fee');
         // return true;
-        (bool success , bytes memory data) = contractAddress.call{value: verifyFee}(
-            abi.encodeWithSignature("verify(uint24,bytes32,uint8)", blockNumber, txHash, 6)
-        );
-        emit LogRes(data, abi.encodePacked(uint(1)));
+        (bool success, bytes memory data) =
+            contractAddress.call{value: verifyFee}(
+                abi.encodeWithSignature('verify(uint24,bytes32,uint8)', blockNumber, txHash, 6)
+            );
+        emit LogRes(data, abi.encodePacked(uint256(1)));
         if (success) {
-            return compareBytes(data, abi.encodePacked(uint(1)));
+            return compareBytes(data, abi.encodePacked(uint256(1)));
         } else {
             return false;
         }
     }
+
     function compareBytes(bytes memory b1, bytes memory b2) internal pure returns (bool) {
         if (b1.length != b2.length) {
             return false;
         }
 
-        for (uint i = 0; i < b1.length; i++) {
+        for (uint256 i = 0; i < b1.length; i++) {
             if (b1[i] != b2[i]) {
                 return false;
             }
@@ -180,7 +205,7 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         return true;
     }
-    
+
     /// @dev Common checks for valid tick inputs.
     function checkTicks(int24 tickLower, int24 tickUpper) private pure {
         require(tickLower < tickUpper, 'TLU');
@@ -197,9 +222,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @dev This function is gas optimized to avoid a redundant extcodesize check in addition to the returndatasize
     /// check
     function balance0() private view returns (uint256) {
-        (bool success, bytes memory data) = token0.staticcall(
-            abi.encodeWithSelector(IERC20Minimal.balanceOf.selector, address(this))
-        );
+        (bool success, bytes memory data) =
+            token0.staticcall(abi.encodeWithSelector(IERC20Minimal.balanceOf.selector, address(this)));
         require(success && data.length >= 32);
         return abi.decode(data, (uint256));
     }
@@ -208,9 +232,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     /// @dev This function is gas optimized to avoid a redundant extcodesize check in addition to the returndatasize
     /// check
     function balance1() private view returns (uint256) {
-        (bool success, bytes memory data) = token1.staticcall(
-            abi.encodeWithSelector(IERC20Minimal.balanceOf.selector, address(this))
-        );
+        (bool success, bytes memory data) =
+            token1.staticcall(abi.encodeWithSelector(IERC20Minimal.balanceOf.selector, address(this)));
         require(success && data.length >= 32);
         return abi.decode(data, (uint256));
     }
@@ -268,14 +291,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             );
         } else if (_slot0.tick < tickUpper) {
             uint32 time = _blockTimestamp();
-            (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) = observations.observeSingle(
-                time,
-                0,
-                _slot0.tick,
-                _slot0.observationIndex,
-                liquidity,
-                _slot0.observationCardinality
-            );
+            (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) =
+                observations.observeSingle(
+                    time,
+                    0,
+                    _slot0.tick,
+                    _slot0.observationIndex,
+                    liquidity,
+                    _slot0.observationCardinality
+                );
             return (
                 tickCumulative - tickCumulativeLower - tickCumulativeUpper,
                 secondsPerLiquidityCumulativeX128 -
@@ -319,10 +343,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         noDelegateCall
     {
         uint16 observationCardinalityNextOld = slot0.observationCardinalityNext; // for the event
-        uint16 observationCardinalityNextNew = observations.grow(
-            observationCardinalityNextOld,
-            observationCardinalityNext
-        );
+        uint16 observationCardinalityNextNew =
+            observations.grow(observationCardinalityNextOld, observationCardinalityNext);
         slot0.observationCardinalityNext = observationCardinalityNextNew;
         if (observationCardinalityNextOld != observationCardinalityNextNew)
             emit IncreaseObservationCardinalityNext(observationCardinalityNextOld, observationCardinalityNextNew);
@@ -455,14 +477,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         bool flippedUpper;
         if (liquidityDelta != 0) {
             uint32 time = _blockTimestamp();
-            (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) = observations.observeSingle(
-                time,
-                0,
-                slot0.tick,
-                slot0.observationIndex,
-                liquidity,
-                slot0.observationCardinality
-            );
+            (int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128) =
+                observations.observeSingle(
+                    time,
+                    0,
+                    slot0.tick,
+                    slot0.observationIndex,
+                    liquidity,
+                    slot0.observationCardinality
+                );
 
             flippedLower = ticks.update(
                 tickLower,
@@ -497,13 +520,8 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             }
         }
 
-        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) = ticks.getFeeGrowthInside(
-            tickLower,
-            tickUpper,
-            tick,
-            _feeGrowthGlobal0X128,
-            _feeGrowthGlobal1X128
-        );
+        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
+            ticks.getFeeGrowthInside(tickLower, tickUpper, tick, _feeGrowthGlobal0X128, _feeGrowthGlobal1X128);
 
         position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);
 
@@ -528,14 +546,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         bytes calldata data
     ) external override lock returns (uint256 amount0, uint256 amount1) {
         require(amount > 0);
-        (, int256 amount0Int, int256 amount1Int) = _modifyPosition(
-            ModifyPositionParams({
-                owner: recipient,
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                liquidityDelta: int256(amount).toInt128()
-            })
-        );
+        (, int256 amount0Int, int256 amount1Int) =
+            _modifyPosition(
+                ModifyPositionParams({
+                    owner: recipient,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    liquidityDelta: int256(amount).toInt128()
+                })
+            );
 
         amount0 = uint256(amount0Int);
         amount1 = uint256(amount1Int);
@@ -584,14 +603,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickUpper,
         uint128 amount
     ) external override lock returns (uint256 amount0, uint256 amount1) {
-        (Position.Info storage position, int256 amount0Int, int256 amount1Int) = _modifyPosition(
-            ModifyPositionParams({
-                owner: msg.sender,
-                tickLower: tickLower,
-                tickUpper: tickUpper,
-                liquidityDelta: -int256(amount).toInt128()
-            })
-        );
+        (Position.Info storage position, int256 amount0Int, int256 amount1Int) =
+            _modifyPosition(
+                ModifyPositionParams({
+                    owner: msg.sender,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    liquidityDelta: -int256(amount).toInt128()
+                })
+            );
 
         amount0 = uint256(-amount0Int);
         amount1 = uint256(-amount1Int);
@@ -678,26 +698,28 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         slot0.unlocked = false;
 
-        SwapCache memory cache = SwapCache({
-            liquidityStart: liquidity,
-            blockTimestamp: _blockTimestamp(),
-            feeProtocol: zeroForOne ? (slot0Start.feeProtocol % 16) : (slot0Start.feeProtocol >> 4),
-            secondsPerLiquidityCumulativeX128: 0,
-            tickCumulative: 0,
-            computedLatestObservation: false
-        });
+        SwapCache memory cache =
+            SwapCache({
+                liquidityStart: liquidity,
+                blockTimestamp: _blockTimestamp(),
+                feeProtocol: zeroForOne ? (slot0Start.feeProtocol % 16) : (slot0Start.feeProtocol >> 4),
+                secondsPerLiquidityCumulativeX128: 0,
+                tickCumulative: 0,
+                computedLatestObservation: false
+            });
 
         bool exactInput = amountSpecified > 0;
 
-        SwapState memory state = SwapState({
-            amountSpecifiedRemaining: amountSpecified,
-            amountCalculated: 0,
-            sqrtPriceX96: slot0Start.sqrtPriceX96,
-            tick: slot0Start.tick,
-            feeGrowthGlobalX128: zeroForOne ? feeGrowthGlobal0X128 : feeGrowthGlobal1X128,
-            protocolFee: 0,
-            liquidity: cache.liquidityStart
-        });
+        SwapState memory state =
+            SwapState({
+                amountSpecifiedRemaining: amountSpecified,
+                amountCalculated: 0,
+                sqrtPriceX96: slot0Start.sqrtPriceX96,
+                tick: slot0Start.tick,
+                feeGrowthGlobalX128: zeroForOne ? feeGrowthGlobal0X128 : feeGrowthGlobal1X128,
+                protocolFee: 0,
+                liquidity: cache.liquidityStart
+            });
 
         // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
         while (state.amountSpecifiedRemaining != 0 && state.sqrtPriceX96 != sqrtPriceLimitX96) {
@@ -768,14 +790,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                         );
                         cache.computedLatestObservation = true;
                     }
-                    int128 liquidityNet = ticks.cross(
-                        step.tickNext,
-                        (zeroForOne ? state.feeGrowthGlobalX128 : feeGrowthGlobal0X128),
-                        (zeroForOne ? feeGrowthGlobal1X128 : state.feeGrowthGlobalX128),
-                        cache.secondsPerLiquidityCumulativeX128,
-                        cache.tickCumulative,
-                        cache.blockTimestamp
-                    );
+                    int128 liquidityNet =
+                        ticks.cross(
+                            step.tickNext,
+                            (zeroForOne ? state.feeGrowthGlobalX128 : feeGrowthGlobal0X128),
+                            (zeroForOne ? feeGrowthGlobal1X128 : state.feeGrowthGlobalX128),
+                            cache.secondsPerLiquidityCumulativeX128,
+                            cache.tickCumulative,
+                            cache.blockTimestamp
+                        );
                     // if we're moving leftward, we interpret liquidityNet as the opposite sign
                     // safe because liquidityNet cannot be type(int128).min
                     if (zeroForOne) liquidityNet = -liquidityNet;
@@ -792,14 +815,15 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
 
         // update tick and write an oracle entry if the tick change
         if (state.tick != slot0Start.tick) {
-            (uint16 observationIndex, uint16 observationCardinality) = observations.write(
-                slot0Start.observationIndex,
-                cache.blockTimestamp,
-                slot0Start.tick,
-                cache.liquidityStart,
-                slot0Start.observationCardinality,
-                slot0Start.observationCardinalityNext
-            );
+            (uint16 observationIndex, uint16 observationCardinality) =
+                observations.write(
+                    slot0Start.observationIndex,
+                    cache.blockTimestamp,
+                    slot0Start.tick,
+                    cache.liquidityStart,
+                    slot0Start.observationCardinality,
+                    slot0Start.observationCardinalityNext
+                );
             (slot0.sqrtPriceX96, slot0.tick, slot0.observationIndex, slot0.observationCardinality) = (
                 state.sqrtPriceX96,
                 state.tick,

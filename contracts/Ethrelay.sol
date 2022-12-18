@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.7.0 <0.9.0;
 
-import "./EthrelayCore.sol";
-import "./RLPReader.sol";
+import './EthrelayCore.sol';
+import './RLPReader.sol';
 
 /// @title Ethrelay: A contract enabling cross-blockchain verifications (transactions, receipts, states)
 /// @author Marten Sigwart, Philipp Frauenthaler, Leonhard Esterbauer, Markus Levonyak
@@ -10,33 +10,37 @@ import "./RLPReader.sol";
 ///         for verifying Merkle Patricia proofs (transactions, receipts, states).
 /// @dev    This contract uses the EthrelayCore contract and extends it with an incentive structure.
 contract Ethrelay is EthrelayCore {
-
     using RLPReader for *;
-    uint constant REQUIRED_STAKE_PER_BLOCK = 1 ether;
-    uint constant REQUIRED_VERIFICATION_FEE_IN_WEI = 0.1 ether;
+    uint256 constant REQUIRED_STAKE_PER_BLOCK = 1 ether;
+    uint256 constant REQUIRED_VERIFICATION_FEE_IN_WEI = 0.1 ether;
     uint8 constant VERIFICATION_TYPE_TX = 1;
     uint8 constant VERIFICATION_TYPE_RECEIPT = 2;
     uint8 constant VERIFICATION_TYPE_STATE = 3;
 
     mapping(address => bytes32[]) blocksSubmittedByClient;
-    mapping(address => uint) clientStake;
+    mapping(address => uint256) clientStake;
 
     // The contract is initialized with block 8084509 and the total difficulty of that same block.
     // The contract creator needs to make sure that these values represent a valid block of the tracked blockchain.
-    constructor(bytes memory _rlpHeader, uint totalDifficulty, address _ethashContractAddr) EthrelayCore(_rlpHeader, totalDifficulty, _ethashContractAddr) {}
+    constructor(
+        bytes memory _rlpHeader,
+        uint256 totalDifficulty,
+        address _ethashContractAddr
+    ) EthrelayCore(_rlpHeader, totalDifficulty, _ethashContractAddr) {}
 
     /// @dev Deposits stake for a client allowing the client to submit block headers.
-    function depositStake(uint amount) payable public {
-        require(amount == msg.value, "transfer amount not equal to function parameter");
+    function depositStake(uint256 amount) public payable {
+        require(amount == msg.value, 'transfer amount not equal to function parameter');
         clientStake[msg.sender] = clientStake[msg.sender] + msg.value;
     }
 
-    event WithdrawStake(address client, uint withdrawnStake);
+    event WithdrawStake(address client, uint256 withdrawnStake);
+
     /// @dev Withdraws the stake of a client. The stake is reduced by the specified amount. Emits an event WithdrawStake
     ///      containing the client's address and the amount of withdrawn stake.
-    function withdrawStake(uint amount) public {
+    function withdrawStake(uint256 amount) public {
         // if participant has not emitted amount stake we can for sure revert
-        require(clientStake[msg.sender] >= amount, "amount higher than deposited stake");
+        require(clientStake[msg.sender] >= amount, 'amount higher than deposited stake');
 
         // else we check the unlocked stake and if enough stake is available we simply withdraw amount
         if (getUnusedStake(msg.sender) >= amount) {
@@ -59,15 +63,15 @@ contract Ethrelay is EthrelayCore {
         emit WithdrawStake(msg.sender, 0);
     }
 
-    function getStake() public view returns (uint) {
+    function getStake() public view returns (uint256) {
         return clientStake[msg.sender];
     }
 
-    function getRequiredStakePerBlock() public pure returns (uint) {
+    function getRequiredStakePerBlock() public pure returns (uint256) {
         return REQUIRED_STAKE_PER_BLOCK;
     }
 
-    function getRequiredVerificationFee() public pure returns (uint) {
+    function getRequiredVerificationFee() public pure returns (uint256) {
         return REQUIRED_VERIFICATION_FEE_IN_WEI;
     }
 
@@ -108,20 +112,25 @@ contract Ethrelay is EthrelayCore {
     function submitBlockBatch(bytes memory _rlpHeaders) public {
         RLPReader.Iterator memory it = _rlpHeaders.toRlpItem().iterator();
 
-        while(it.hasNext()) {
+        while (it.hasNext()) {
             bytes memory rlpHeader = it.next().toBytes();
             submitBlock(rlpHeader);
         }
     }
 
-    function disputeBlockHeader(bytes calldata rlpHeader, bytes memory rlpParent, uint[] memory dataSetLookup, uint[] memory witnessForLookup) public {
+    function disputeBlockHeader(
+        bytes calldata rlpHeader,
+        bytes memory rlpParent,
+        uint256[] memory dataSetLookup,
+        uint256[] memory witnessForLookup
+    ) public {
         address[] memory submittersToPunish = disputeBlock(rlpHeader, rlpParent, dataSetLookup, witnessForLookup);
 
         // if the PoW validation initiated by the dispute function was successful (i.e., the block is legal),
         // submittersToPunish will be empty and no further action will be carried out.
-        uint collectedStake = 0;
+        uint256 collectedStake = 0;
 
-        for (uint i = 0; i < submittersToPunish.length; i++) {
+        for (uint256 i = 0; i < submittersToPunish.length; i++) {
             address client = submittersToPunish[i];
             clientStake[client] = clientStake[client] - REQUIRED_STAKE_PER_BLOCK;
             collectedStake += REQUIRED_STAKE_PER_BLOCK;
@@ -131,23 +140,50 @@ contract Ethrelay is EthrelayCore {
         clientStake[msg.sender] += collectedStake;
     }
 
-    function verify(uint8 verificationType, uint feeInWei, bytes memory rlpHeader, uint8 noOfConfirmations, bytes memory rlpEncodedValue,
-        bytes memory path, bytes memory rlpEncodedNodes) private returns (uint8) {
-
-        require(feeInWei == msg.value, "transfer amount not equal to function parameter");
-        require(feeInWei >= REQUIRED_VERIFICATION_FEE_IN_WEI, "provided fee is less than expected fee");
+    function verify(
+        uint8 verificationType,
+        uint256 feeInWei,
+        bytes memory rlpHeader,
+        uint8 noOfConfirmations,
+        bytes memory rlpEncodedValue,
+        bytes memory path,
+        bytes memory rlpEncodedNodes
+    ) private returns (uint8) {
+        require(feeInWei == msg.value, 'transfer amount not equal to function parameter');
+        require(feeInWei >= REQUIRED_VERIFICATION_FEE_IN_WEI, 'provided fee is less than expected fee');
 
         bytes32 blockHash = keccak256(rlpHeader);
         uint8 result;
 
         if (verificationType == VERIFICATION_TYPE_TX) {
-            result = verifyMerkleProof(blockHash, noOfConfirmations, rlpEncodedValue, path, rlpEncodedNodes, getTxRoot(rlpHeader));
+            result = verifyMerkleProof(
+                blockHash,
+                noOfConfirmations,
+                rlpEncodedValue,
+                path,
+                rlpEncodedNodes,
+                getTxRoot(rlpHeader)
+            );
         } else if (verificationType == VERIFICATION_TYPE_RECEIPT) {
-            result = verifyMerkleProof(blockHash, noOfConfirmations, rlpEncodedValue, path, rlpEncodedNodes, getReceiptsRoot(rlpHeader));
+            result = verifyMerkleProof(
+                blockHash,
+                noOfConfirmations,
+                rlpEncodedValue,
+                path,
+                rlpEncodedNodes,
+                getReceiptsRoot(rlpHeader)
+            );
         } else if (verificationType == VERIFICATION_TYPE_STATE) {
-            result = verifyMerkleProof(blockHash, noOfConfirmations, rlpEncodedValue, path, rlpEncodedNodes, getStateRoot(rlpHeader));
+            result = verifyMerkleProof(
+                blockHash,
+                noOfConfirmations,
+                rlpEncodedValue,
+                path,
+                rlpEncodedNodes,
+                getStateRoot(rlpHeader)
+            );
         } else {
-            revert("Unknown verification type");
+            revert('Unknown verification type');
         }
 
         // send fee to block submitter
@@ -161,6 +197,7 @@ contract Ethrelay is EthrelayCore {
     }
 
     event VerifyTransaction(uint8 result);
+
     /// @dev Verifies if a transaction is included in the given block's transactions Merkle Patricia trie
     /// @param feeInWei the fee that is payed for the verification and must be equal to VERIFICATION_FEE_IN_WEI.
     /// @param rlpHeader the rlp encoded header that contains the Merkle root hash
@@ -170,10 +207,16 @@ contract Ethrelay is EthrelayCore {
     /// @param rlpEncodedNodes an RLP encoded list of nodes of the Merkle branch, first element is the root node, last element the transaction
     /// @return 0: verification was successful
     ///         1: block is confirmed and unlocked, but the Merkle proof was invalid
-    function verifyTransaction(uint feeInWei, bytes memory rlpHeader, uint8 noOfConfirmations, bytes memory rlpEncodedTx,
-        bytes memory path, bytes memory rlpEncodedNodes) payable public returns (uint8) {
-
-        uint8 result = verify(VERIFICATION_TYPE_TX, feeInWei, rlpHeader, noOfConfirmations, rlpEncodedTx, path, rlpEncodedNodes);
+    function verifyTransaction(
+        uint256 feeInWei,
+        bytes memory rlpHeader,
+        uint8 noOfConfirmations,
+        bytes memory rlpEncodedTx,
+        bytes memory path,
+        bytes memory rlpEncodedNodes
+    ) public payable returns (uint8) {
+        uint8 result =
+            verify(VERIFICATION_TYPE_TX, feeInWei, rlpHeader, noOfConfirmations, rlpEncodedTx, path, rlpEncodedNodes);
 
         emit VerifyTransaction(result);
 
@@ -181,6 +224,7 @@ contract Ethrelay is EthrelayCore {
     }
 
     event VerifyReceipt(uint8 result);
+
     /// @dev Verifies if a receipt is included in the given block's receipts Merkle Patricia trie
     /// @param feeInWei the fee that is payed for the verification and must be equal to VERIFICATION_FEE_IN_WEI.
     /// @param rlpHeader the rlp encoded header that contains the Merkle root hash
@@ -190,10 +234,24 @@ contract Ethrelay is EthrelayCore {
     /// @param rlpEncodedNodes an RLP encoded list of nodes of the Merkle branch, first element is the root node, last element the receipt
     /// @return 0: verification was successful
     ///         1: block is confirmed and unlocked, but the Merkle proof was invalid
-    function verifyReceipt(uint feeInWei, bytes memory rlpHeader, uint8 noOfConfirmations, bytes memory rlpEncodedReceipt,
-        bytes memory path, bytes memory rlpEncodedNodes) payable public returns (uint8) {
-
-        uint8 result = verify(VERIFICATION_TYPE_RECEIPT, feeInWei, rlpHeader, noOfConfirmations, rlpEncodedReceipt, path, rlpEncodedNodes);
+    function verifyReceipt(
+        uint256 feeInWei,
+        bytes memory rlpHeader,
+        uint8 noOfConfirmations,
+        bytes memory rlpEncodedReceipt,
+        bytes memory path,
+        bytes memory rlpEncodedNodes
+    ) public payable returns (uint8) {
+        uint8 result =
+            verify(
+                VERIFICATION_TYPE_RECEIPT,
+                feeInWei,
+                rlpHeader,
+                noOfConfirmations,
+                rlpEncodedReceipt,
+                path,
+                rlpEncodedNodes
+            );
 
         emit VerifyReceipt(result);
 
@@ -201,6 +259,7 @@ contract Ethrelay is EthrelayCore {
     }
 
     event VerifyState(uint8 result);
+
     /// @dev   Verifies if a node is included in the given block's state Merkle Patricia trie
     /// @param feeInWei the fee that is payed for the verification and must be equal to VERIFICATION_FEE_IN_WEI.
     /// @param rlpHeader the rlp encoded header that contains the Merkle root hash
@@ -210,19 +269,37 @@ contract Ethrelay is EthrelayCore {
     /// @param rlpEncodedNodes an RLP encoded list of nodes of the Merkle branch, first element is the root node, last element a state node
     /// @return 0: verification was successful
     ///         1: block is confirmed and unlocked, but the Merkle proof was invalid
-    function verifyState(uint feeInWei, bytes memory rlpHeader, uint8 noOfConfirmations, bytes memory rlpEncodedState,
-        bytes memory path, bytes memory rlpEncodedNodes) payable public returns (uint8) {
-
-        uint8 result = verify(VERIFICATION_TYPE_STATE, feeInWei, rlpHeader, noOfConfirmations, rlpEncodedState, path, rlpEncodedNodes);
+    function verifyState(
+        uint256 feeInWei,
+        bytes memory rlpHeader,
+        uint8 noOfConfirmations,
+        bytes memory rlpEncodedState,
+        bytes memory path,
+        bytes memory rlpEncodedNodes
+    ) public payable returns (uint8) {
+        uint8 result =
+            verify(
+                VERIFICATION_TYPE_STATE,
+                feeInWei,
+                rlpHeader,
+                noOfConfirmations,
+                rlpEncodedState,
+                path,
+                rlpEncodedNodes
+            );
 
         emit VerifyState(result);
 
         return result;
     }
 
-    function isBlockConfirmed(uint feeInWei, bytes32 blockHash, uint8 noOfConfirmations) public payable returns (bool) {
-        require(feeInWei == msg.value, "transfer amount not equal to function parameter");
-        require(feeInWei >= REQUIRED_VERIFICATION_FEE_IN_WEI, "provided fee is less than expected fee");
+    function isBlockConfirmed(
+        uint256 feeInWei,
+        bytes32 blockHash,
+        uint8 noOfConfirmations
+    ) public payable returns (bool) {
+        require(feeInWei == msg.value, 'transfer amount not equal to function parameter');
+        require(feeInWei >= REQUIRED_VERIFICATION_FEE_IN_WEI, 'provided fee is less than expected fee');
 
         return isBlockConfirmed(blockHash, noOfConfirmations);
     }
@@ -230,8 +307,8 @@ contract Ethrelay is EthrelayCore {
     /// @dev Calculates the fraction of the provided stake that is not used by any of the blocks in the client's list of
     ///      submitted block headers (blocksSubmittedByClient). It does not matter whether a block's lock period has already
     ///      been elapsed. As long as the block is referenced in blocksSubmittedByClient, the stake is considered as "used".
-    function getUnusedStake(address client) private view returns (uint) {
-        uint usedStake = blocksSubmittedByClient[client].length * REQUIRED_STAKE_PER_BLOCK;
+    function getUnusedStake(address client) private view returns (uint256) {
+        uint256 usedStake = blocksSubmittedByClient[client].length * REQUIRED_STAKE_PER_BLOCK;
 
         if (clientStake[client] < usedStake) {
             // if a client get punished due to a dispute the clientStake[client] can be less than
@@ -251,8 +328,8 @@ contract Ethrelay is EthrelayCore {
 
     /// @dev Checks for each block referenced in blocksSubmittedByClient whether it is unlocked. In case a referenced
     ///      block's lock period has expired, its reference is removed from the list blocksSubmittedByClient.
-    function cleanSubmitList(address client) private returns (uint) {
-        uint deletedElements = 0;
+    function cleanSubmitList(address client) private returns (uint256) {
+        uint256 deletedElements = 0;
 
         // this is very unpredictable as we relay on the "now" value in isUnlocked
         // and "now" relies on the timestamp a block is being mined
@@ -282,12 +359,12 @@ contract Ethrelay is EthrelayCore {
         // an old block is unlocked and at the estimation timestamp the client assumed there will be
         // less blocks too free if not even an exception and a rollback that does cost less than the
         // two described cases
-        for (uint i = 0; i < blocksSubmittedByClient[client].length;) {
+        for (uint256 i = 0; i < blocksSubmittedByClient[client].length; ) {
             bytes32 blockHash = blocksSubmittedByClient[client][i];
 
             if (!isHeaderStored(blockHash) || isUnlocked(blockHash)) {
                 // block has been removed or is already unlocked (i.e., lock period has elapsed) -> remove hash from array
-                uint lastElemPos = blocksSubmittedByClient[client].length - 1;
+                uint256 lastElemPos = blocksSubmittedByClient[client].length - 1;
                 // copy last element to position i (overwrite current elem)
                 blocksSubmittedByClient[client][i] = blocksSubmittedByClient[client][lastElemPos];
                 // remove last element
@@ -303,7 +380,7 @@ contract Ethrelay is EthrelayCore {
         return deletedElements;
     }
 
-    function withdraw(address payable receiver, uint amount) private {
+    function withdraw(address payable receiver, uint256 amount) private {
         clientStake[receiver] = clientStake[receiver] - amount;
         receiver.transfer(amount);
     }

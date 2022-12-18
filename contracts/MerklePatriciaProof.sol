@@ -7,7 +7,7 @@
  * @dev Library for verifing merkle patricia proofs.
  */
 pragma solidity >=0.5.10 <0.9.0;
-import "./RLPReader.sol";
+import './RLPReader.sol';
 
 library MerklePatriciaProof {
     /*
@@ -18,7 +18,12 @@ library MerklePatriciaProof {
      * @param root The root hash of the trie.
      * @return return code indicating result. Return code 0 indicates a positive verification
      */
-    function verify(bytes memory value, bytes memory encodedPath, bytes memory rlpParentNodes, bytes32 root) internal pure returns (uint code) {
+    function verify(
+        bytes memory value,
+        bytes memory encodedPath,
+        bytes memory rlpParentNodes,
+        bytes32 root
+    ) internal pure returns (uint256 code) {
         RLPReader.RLPItem memory item = RLPReader.toRlpItem(rlpParentNodes);
 
         // list of the rlp encoded proof nodes
@@ -32,26 +37,31 @@ library MerklePatriciaProof {
         bytes32 nodeKey = root;
 
         // current height-level of the trie
-        uint pathPtr = 0;
+        uint256 pathPtr = 0;
 
         // [8, 1, 8, 8]
         bytes memory path = _getNibbleArray(encodedPath);
 
         // path is empty - this is equal as
-        if (path.length == 0) { return (1); }
+        if (path.length == 0) {
+            return (1);
+        }
 
         // iterate all the rlp encoded nodes in the proof
-        for (uint i = 0; i < parentNodes.length; i++) {
-
+        for (uint256 i = 0; i < parentNodes.length; i++) {
             // the actual path is longer than the given path - key not found
-            if (pathPtr > path.length) { return (2); }
+            if (pathPtr > path.length) {
+                return (2);
+            }
 
             // next node in the proof is read
             currentNode = RLPReader.toBytes(parentNodes[i]);
 
             // the hash of the current-node does not represent the desired nodeKey, this is especially the case at the
             // beginning of the proof where the transactionRootHash is verified
-            if (nodeKey != keccak256(currentNode)) { return (3); }
+            if (nodeKey != keccak256(currentNode)) {
+                return (3);
+            }
 
             // the proof-node is transformed into the byte-array containing key/value/branch nodes depending on the type of the proof node
             currentNodeList = RLPReader.toList(RLPReader.toRlpItem(currentNode));
@@ -82,7 +92,8 @@ library MerklePatriciaProof {
 
                 pathPtr += _nibblesToTraverse(RLPReader.toBytes(currentNodeList[0]), path, pathPtr);
 
-                if (pathPtr == path.length) {//leaf node
+                if (pathPtr == path.length) {
+                    //leaf node
                     if (keccak256(RLPReader.toBytes(currentNodeList[1])) == keccak256(value)) {
                         return (0);
                     } else {
@@ -101,8 +112,12 @@ library MerklePatriciaProof {
         }
     }
 
-    function _nibblesToTraverse(bytes memory encodedPartialPath, bytes memory path, uint pathPtr) private pure returns (uint) {
-        uint len;
+    function _nibblesToTraverse(
+        bytes memory encodedPartialPath,
+        bytes memory path,
+        uint256 pathPtr
+    ) private pure returns (uint256) {
+        uint256 len;
         // encodedPartialPath has elements that are each two hex characters (1 byte), but partialPath
         // and slicedPath have elements that are each one hex character (1 nibble)
         bytes memory partialPath = _getNibbleArrayEncoding(encodedPartialPath);
@@ -110,9 +125,9 @@ library MerklePatriciaProof {
 
         // pathPtr counts nibbles in path
         // partialPath.length is a number of nibbles
-        for (uint i=pathPtr; i<pathPtr+partialPath.length; i++) {
+        for (uint256 i = pathPtr; i < pathPtr + partialPath.length; i++) {
             bytes1 pathNibble = path[i];
-            slicedPath[i-pathPtr] = pathNibble;
+            slicedPath[i - pathPtr] = pathNibble;
         }
 
         if (keccak256(partialPath) == keccak256(slicedPath)) {
@@ -126,21 +141,21 @@ library MerklePatriciaProof {
     // bytes b must be hp encoded
     function _getNibbleArrayEncoding(bytes memory b) private pure returns (bytes memory) {
         bytes memory nibbles;
-        if (b.length>0) {
+        if (b.length > 0) {
             uint8 offset;
-            uint8 hpNibble = uint8(_getNthNibbleOfBytes(0,b));
+            uint8 hpNibble = uint8(_getNthNibbleOfBytes(0, b));
             if (hpNibble == 1 || hpNibble == 3) {
-                nibbles = new bytes(b.length*2-1);
-                bytes1 oddNibble = _getNthNibbleOfBytes(1,b);
+                nibbles = new bytes(b.length * 2 - 1);
+                bytes1 oddNibble = _getNthNibbleOfBytes(1, b);
                 nibbles[0] = oddNibble;
                 offset = 1;
             } else {
-                nibbles = new bytes(b.length*2-2);
+                nibbles = new bytes(b.length * 2 - 2);
                 offset = 0;
             }
 
-            for (uint i = offset; i < nibbles.length; i++) {
-                nibbles[i] = _getNthNibbleOfBytes(i-offset+2,b);
+            for (uint256 i = offset; i < nibbles.length; i++) {
+                nibbles[i] = _getNthNibbleOfBytes(i - offset + 2, b);
             }
         }
         return nibbles;
@@ -151,8 +166,8 @@ library MerklePatriciaProof {
     // example: byte-array in hex representation: [81, 88] will be transformed to [8, 1, 8, 8]
     // normal byte array, no special encoding/decoding used
     function _getNibbleArray(bytes memory b) private pure returns (bytes memory) {
-        bytes memory nibbles = new bytes(b.length*2);
-        for (uint i = 0; i < nibbles.length; i++) {
+        bytes memory nibbles = new bytes(b.length * 2);
+        for (uint256 i = 0; i < nibbles.length; i++) {
             nibbles[i] = _getNthNibbleOfBytes(i, b);
         }
         return nibbles;
@@ -164,8 +179,7 @@ library MerklePatriciaProof {
      *@param Bytes String
      *@return ByteString[N]
      */
-    function _getNthNibbleOfBytes(uint n, bytes memory str) private pure returns (bytes1) {
-        return bytes1(n%2==0 ? uint8(str[n/2])/0x10 : uint8(str[n/2])%0x10);
+    function _getNthNibbleOfBytes(uint256 n, bytes memory str) private pure returns (bytes1) {
+        return bytes1(n % 2 == 0 ? uint8(str[n / 2]) / 0x10 : uint8(str[n / 2]) % 0x10);
     }
-
 }
